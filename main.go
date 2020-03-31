@@ -115,8 +115,15 @@ func main() {
 				Usage:   "Draw chart of cases, deaths and recoveries for each countries",
 				Action: func(c *cli.Context) error {
 					country := c.String("country")
-					if err := DrawCountryBarChart(country, c.Int("max")); err != nil {
-						color.Red("Error Parsing Data, Details: %v", err)
+					drawType := c.String("type")
+					if drawType == "bar" {
+						if err := DrawCountryBarChart(country, c.Int("max")); err != nil {
+							color.Red("Error Parsing Data, Details: %v", err)
+						}
+					}else{
+						if err := DrawCountryLineChart(country, c.Int("max")); err != nil {
+							color.Red("Error Parsing Data, Details: %v", err)
+						}
 					}
 					return nil
 				},
@@ -132,6 +139,12 @@ func main() {
 						Aliases: []string{"c"},
 						Usage:   "Specify the country name to be used for draw chart",
 						Value:   "all",
+					},
+					&cli.StringFlag{
+						Name:    "type",
+						Aliases: []string{"t"},
+						Usage:   "Specify chart type [bar, line]",
+						Value:   "bar",
 					},
 				},
 			},
@@ -406,6 +419,107 @@ func DrawCountryBarChart(country string, max int) error {
 		),
 		ui.NewRow(3.0/10,
 			ui.NewCol(1.0, rChart),
+		),
+	)
+	
+	ui.Render(grid)
+	
+	uiEvents := ui.PollEvents()
+	for {
+		e := <-uiEvents
+		switch e.ID {
+		case "q", "<C-c>":
+			return nil
+		}
+	}
+}
+
+func DrawCountryLineChart(country string, max int) error {
+	if err := FetchData(false); err != nil {
+		return err
+	}
+	
+	plotChart := widgets.NewPlot()
+	plotChart.Title = fmt.Sprintf("Case, Death, Recoveries Chart [%s]", country)
+	
+	plotChart.PaddingBottom,plotChart.PaddingLeft,plotChart.PaddingRight, plotChart.PaddingTop = 1,1,1,1
+	plotChart.Data = make([][]float64, 3)
+	plotChart.AxesColor = ui.ColorWhite
+	plotChart.LineColors = []ui.Color{ui.ColorYellow, ui.ColorMagenta, ui.ColorGreen}
+	plotChart.Marker = widgets.MarkerBraille
+	plotChart.PlotType = widgets.LineChart
+	plotChart.DrawDirection = widgets.DrawRight
+	plotChart.HorizontalScale = 1
+	plotChart.DataLabels = []string{"Cased", "Deaths", "Recovered"}
+	
+	if country == "all" {
+		labels := make([]string,0)
+		cMap := make(map[string]float64)
+		dMap := make(map[string]float64)
+		rMap := make(map[string]float64)
+		index:=0
+		for _, countryItem := range AllValues {
+			j :=0
+			for i:=len(countryItem)-1; i>=0; i-- {
+				j++
+				if index == 0 {
+					labels = append(labels, countryItem[i].Date) // Add Labels only once
+				}
+				cMap[countryItem[i].Date] = cMap[countryItem[i].Date] + float64(countryItem[i].Confirmed)
+				dMap[countryItem[i].Date] = dMap[countryItem[i].Date] + float64(countryItem[i].Deaths)
+				rMap[countryItem[i].Date] = rMap[countryItem[i].Date] + float64(countryItem[i].Recovered)
+				if j == max {
+					break
+				}
+			}
+			index++
+		}
+		for _,label := range labels {
+			plotChart.Data[0] = append(plotChart.Data[0], cMap[label])
+			plotChart.Data[1] = append(plotChart.Data[1], dMap[label])
+			plotChart.Data[2] = append(plotChart.Data[2], rMap[label])
+		}
+	}else{
+		if countryItem, ok := AllValues[country]; ok {
+			j:=0
+			for i:=len(countryItem)-1; i>=0; i-- {
+				j++
+				plotChart.Data[0] = append(plotChart.Data[0], float64(countryItem[i].Confirmed))
+				plotChart.Data[1] = append(plotChart.Data[1], float64(countryItem[i].Deaths))
+				plotChart.Data[2] = append(plotChart.Data[2], float64(countryItem[i].Recovered))
+				if j == max {
+					break
+				}
+			}
+		} else {
+			return errors.New("country not found in dataset")
+		}
+	}
+	
+	plotChart.Data[0] = ReverseFloats(plotChart.Data[0])
+	plotChart.Data[1] = ReverseFloats(plotChart.Data[1])
+	plotChart.Data[2] = ReverseFloats(plotChart.Data[2])
+	
+	p := widgets.NewParagraph()
+	p.Text = "PRESS [q](fg:red) TO QUIT CHART | SERIES [Cases](fg:yellow), [Deaths](fg:magenta), [Recovered](fg:green)"
+	p.SetRect(0, 0, 25, 5)
+	p.BorderStyle.Fg = ui.ColorYellow
+	
+	if err := ui.Init(); err != nil {
+		log.Fatalf("failed to initialize termui: %v", err)
+	}
+	defer ui.Close()
+	
+	grid := ui.NewGrid()
+	termWidth, termHeight := ui.TerminalDimensions()
+	grid.SetRect(0, 0, termWidth, termHeight)
+	
+	grid.Set(
+		ui.NewRow(1.0/10,
+			ui.NewCol(1.0,p ),
+		),
+		ui.NewRow(9.0/10,
+			ui.NewCol(1.0, plotChart),
 		),
 	)
 	
