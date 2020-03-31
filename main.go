@@ -142,7 +142,7 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:    "type",
-						Aliases: []string{"t"},
+						Aliases: []string{"t","x"},
 						Usage:   "Specify chart type [bar, line]",
 						Value:   "bar",
 					},
